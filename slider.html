@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG Image Slider</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .slider-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .slider-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .slider-track {
+            display: flex;
+            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            height: 100%;
+            will-change: transform;
+        }
+
+        .slide {
+            min-width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            margin: 0;
+        }
+
+        .slide img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Loading animation */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+
+        .spinner {
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #333;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="slider-container">
+        <div class="slider-wrapper">
+            <div class="slider-track" id="sliderTrack">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class SVGSlider {
+            constructor() {
+                this.currentIndex = 0;
+                this.images = [];
+                this.totalImages = 604; // Total number of SVG files
+                this.touchStartX = 0;
+                this.touchStartY = 0;
+                this.touchEndX = 0;
+                this.touchEndY = 0;
+                this.isTransitioning = false;
+                this.isSwiping = false;
+                this.swipeStartTime = 0;
+                
+                this.sliderTrack = document.getElementById('sliderTrack');
+                
+                this.init();
+            }
+
+            init() {
+                this.loadImages();
+                this.setupEventListeners();
+            }
+
+            loadImages() {
+                // Generate image paths
+                for (let i = 1; i <= this.totalImages; i++) {
+                    const num = String(i).padStart(3, '0');
+                    this.images.push(`${num}.svg`);
+                }
+
+                // Create slides
+                this.sliderTrack.innerHTML = '';
+                this.images.forEach((image, index) => {
+                    const slide = document.createElement('div');
+                    slide.className = 'slide';
+                    slide.setAttribute('data-index', index);
+                    
+                    const img = document.createElement('img');
+                    img.src = image;
+                    img.alt = `Image ${index + 1}`;
+                    img.loading = index < 3 ? 'eager' : 'lazy'; // Load first 3 images immediately
+                    
+                    slide.appendChild(img);
+                    this.sliderTrack.appendChild(slide);
+                });
+
+                this.updateSlider();
+            }
+
+            setupEventListeners() {
+                // Keyboard navigation
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'ArrowLeft') this.goToPrevious();
+                    if (e.key === 'ArrowRight') this.goToNext();
+                });
+
+                // Touch events
+                this.sliderTrack.addEventListener('touchstart', (e) => {
+                    this.touchStartX = e.touches[0].clientX;
+                    this.touchStartY = e.touches[0].clientY;
+                    this.swipeStartTime = Date.now();
+                    this.isSwiping = false;
+                }, { passive: true });
+
+                this.sliderTrack.addEventListener('touchmove', (e) => {
+                    if (!this.touchStartX) return;
+                    
+                    const currentX = e.touches[0].clientX;
+                    const currentY = e.touches[0].clientY;
+                    const diffX = this.touchStartX - currentX;
+                    const diffY = this.touchStartY - currentY;
+                    
+                    // Determine if this is a horizontal swipe
+                    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
+                        this.isSwiping = true;
+                        e.preventDefault(); // Prevent scrolling during horizontal swipe
+                        
+                        // Visual feedback: move slider proportionally to swipe distance
+                        // Limit movement to prevent going beyond adjacent pages
+                        const maxMove = 100; // Max 100% (one full page)
+                        const movePercent = Math.max(-maxMove, Math.min(maxMove, (diffX / window.innerWidth) * 100));
+                        const translateX = -this.currentIndex * 100 + movePercent;
+                        this.sliderTrack.style.transition = 'none';
+                        this.sliderTrack.style.transform = `translateX(${translateX}%)`;
+                    }
+                }, { passive: false });
+
+                this.sliderTrack.addEventListener('touchend', (e) => {
+                    if (!this.touchStartX) return;
+                    
+                    this.touchEndX = e.changedTouches[0].clientX;
+                    this.touchEndY = e.changedTouches[0].clientY;
+                    
+                    // Restore transition
+                    this.sliderTrack.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                    
+                    if (this.isSwiping) {
+                        this.handleSwipe();
+                    }
+                    
+                    // Reset
+                    this.touchStartX = 0;
+                    this.touchStartY = 0;
+                    this.isSwiping = false;
+                }, { passive: true });
+
+                this.sliderTrack.addEventListener('touchcancel', () => {
+                    // Restore transition if swipe was cancelled
+                    this.sliderTrack.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                    this.updateSlider();
+                    this.touchStartX = 0;
+                    this.touchStartY = 0;
+                    this.isSwiping = false;
+                }, { passive: true });
+
+                // Mouse drag support
+                let isDragging = false;
+                let startX = 0;
+                let scrollLeft = 0;
+
+                this.sliderTrack.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    startX = e.pageX - this.sliderTrack.offsetLeft;
+                    scrollLeft = this.sliderTrack.scrollLeft;
+                    this.sliderTrack.style.cursor = 'grabbing';
+                });
+
+                this.sliderTrack.addEventListener('mouseleave', () => {
+                    if (isDragging) {
+                        // Restore transition and return to current slide
+                        this.sliderTrack.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                        this.updateSlider();
+                    }
+                    isDragging = false;
+                    this.sliderTrack.style.cursor = 'grab';
+                });
+
+                this.sliderTrack.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    e.preventDefault();
+                    const x = e.pageX - this.sliderTrack.offsetLeft;
+                    const walk = x - startX;
+                    
+                    // Visual feedback during drag - limit to one page movement
+                    const movePercent = Math.max(-100, Math.min(100, (walk / window.innerWidth) * 100));
+                    const translateX = -this.currentIndex * 100 + movePercent;
+                    this.sliderTrack.style.transition = 'none';
+                    this.sliderTrack.style.transform = `translateX(${translateX}%)`;
+                });
+                
+                this.sliderTrack.addEventListener('mouseup', (e) => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    this.sliderTrack.style.cursor = 'grab';
+                    
+                    // Restore transition
+                    this.sliderTrack.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                    
+                    const x = e.pageX - this.sliderTrack.offsetLeft;
+                    const walk = x - startX;
+                    const threshold = window.innerWidth * 0.3; // 30% of screen width for page change
+                    
+                    if (Math.abs(walk) > threshold) {
+                        if (walk > 0) {
+                            this.goToPrevious();
+                        } else {
+                            this.goToNext();
+                        }
+                    } else {
+                        // Return to current slide if threshold not met
+                        this.updateSlider();
+                    }
+                });
+            }
+
+            handleSwipe() {
+                const diffX = this.touchStartX - this.touchEndX;
+                const diffY = Math.abs(this.touchStartY - this.touchEndY);
+                const swipeTime = Date.now() - this.swipeStartTime;
+                
+                // Require at least 30% of screen width for page change (full page swipe)
+                const swipeThreshold = window.innerWidth * 0.3;
+                const minSwipeSpeed = 0.2; // pixels per millisecond
+                const swipeSpeed = Math.abs(diffX) / swipeTime;
+                
+                // Check if it's a valid horizontal swipe
+                // Must be more horizontal than vertical, exceed threshold, and be fast enough
+                if (Math.abs(diffX) > diffY && 
+                    Math.abs(diffX) > swipeThreshold && 
+                    swipeTime < 1000 && 
+                    swipeSpeed > minSwipeSpeed) {
+                    if (diffX > 0) {
+                        // Swipe left - next image
+                        this.goToNext();
+                    } else {
+                        // Swipe right - previous image
+                        this.goToPrevious();
+                    }
+                } else {
+                    // If swipe wasn't strong enough, return to current slide
+                    this.updateSlider();
+                }
+            }
+
+            goToSlide(index) {
+                if (this.isTransitioning) return;
+                
+                if (index < 0) {
+                    index = this.totalImages - 1;
+                } else if (index >= this.totalImages) {
+                    index = 0;
+                }
+
+                this.currentIndex = index;
+                this.updateSlider();
+            }
+
+            goToNext() {
+                if (this.isTransitioning) return;
+                this.isTransitioning = true;
+                this.goToSlide(this.currentIndex + 1);
+                setTimeout(() => {
+                    this.isTransitioning = false;
+                }, 500);
+            }
+
+            goToPrevious() {
+                if (this.isTransitioning) return;
+                this.isTransitioning = true;
+                this.goToSlide(this.currentIndex - 1);
+                setTimeout(() => {
+                    this.isTransitioning = false;
+                }, 500);
+            }
+
+            updateSlider() {
+                const translateX = -this.currentIndex * 100;
+                this.sliderTrack.style.transform = `translateX(${translateX}%)`;
+
+                // Preload adjacent images
+                this.preloadAdjacentImages();
+            }
+
+            preloadAdjacentImages() {
+                const preloadIndices = [
+                    this.currentIndex - 1,
+                    this.currentIndex + 1,
+                    this.currentIndex - 2,
+                    this.currentIndex + 2
+                ];
+
+                preloadIndices.forEach(index => {
+                    if (index >= 0 && index < this.totalImages) {
+                        const slide = this.sliderTrack.querySelector(`[data-index="${index}"]`);
+                        if (slide) {
+                            const img = slide.querySelector('img');
+                            if (img && !img.complete) {
+                                const preloadImg = new Image();
+                                preloadImg.src = img.src;
+                            }
+                        }
+                    }
+                });
+            }
+
+        }
+
+        // Initialize slider when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            new SVGSlider();
+        });
+    </script>
+</body>
+</html>
